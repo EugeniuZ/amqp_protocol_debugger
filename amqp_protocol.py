@@ -58,7 +58,7 @@ class ProtocolDetective(object):
         try:
             self._analyze_protocol_part("protocol")
         except ProtocolMismatch as e:
-            print(e, file=sys.stderr)
+            print(e, file=sys.stderr, flush=True)
             for client_message, server_message in zip_longest(self.client_messages, self.server_messages):
                 if client_message:
                     client_message.out_of_order = True
@@ -76,12 +76,14 @@ class ProtocolDetective(object):
                 for protocol_alternative in protocol_alternatives:
                     if _is_client_step(protocol_alternative):
                         self._analyze_atomic_step(protocol_alternative, self.client_messages)
+                        break
                     elif _is_server_step(protocol_alternative):
                         self._analyze_atomic_step(protocol_alternative, self.server_messages)
-                    elif _is_repeatable_step_spec(protocol_alternative):
-                        self._analyze_repeatable_step(protocol_alternative)
-                    elif _is_optional_step_spec(protocol_alternative):
-                        self._analyze_optional_step(protocol_alternative)
+                        break
+                    elif _is_repeatable_step_spec(protocol_alternative) or \
+                            _is_optional_step_spec(protocol_alternative):
+                        raise Exception("Can't have quantifiers applied to an alternative rule. "
+                                        "Use them only in step sequences.")
                     else:  # non-atomic mandatory alternative
                         try:
                             self._analyze_protocol_part(protocol_alternative)
