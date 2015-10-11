@@ -12,7 +12,7 @@ The script receives the dump of bytes exchanged on 2 socket connections between 
 
 import sys
 
-from amqp_protocol_parser import AMQPStreamParser
+from amqp_protocol_parser import AMQPStreamParser, CLIENT, SERVER
 from amqp_protocol import ProtocolDetective
 
 
@@ -29,8 +29,8 @@ def main():
         output_stream = sys.stdout
 
     try:
-        client_stream_parser = AMQPStreamParser(_get_protocol_bytes(client_message_dump_file), "CLIENT")
-        server_stream_parser = AMQPStreamParser(_get_protocol_bytes(server_message_dump_file), "SERVER")
+        client_stream_parser = AMQPStreamParser(_get_protocol_bytes(client_message_dump_file), CLIENT)
+        server_stream_parser = AMQPStreamParser(_get_protocol_bytes(server_message_dump_file), SERVER)
 
         client_messages = [message for message in client_stream_parser]
         server_messages = [message for message in server_stream_parser]

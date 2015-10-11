@@ -3,6 +3,7 @@ import sys
 from itertools import zip_longest
 
 from amqp_protocol_spec import *
+from amqp_constants import FRAME_HEARTBEAT
 
 
 def _get_array_name(protocol_step):
@@ -31,8 +32,16 @@ def _is_alternative_step_spec(step):
     return " | " in step
 
 
+def _is_mandatory_step(step):
+    return not (step.startswith("S:") or step.startswith("C:"))
+
+
 def message_matches_step(step, message):
     return message.source.startswith(step[0]) and message.method == step[2:]
+
+
+def get_protocol_part(protocol_part_name):
+    return getattr(sys.modules[__name__], _get_array_name(protocol_part_name))
 
 
 class ProtocolMismatch(Exception):
@@ -47,8 +56,9 @@ class ProtocolDetective(object):
 
     def analyze(self):
         try:
-            self._analyze_protocol_part(PROTOCOL)
-        except ProtocolMismatch:
+            self._analyze_protocol_part("protocol")
+        except ProtocolMismatch as e:
+            print(e, file=sys.stderr)
             for client_message, server_message in zip_longest(self.client_messages, self.server_messages):
                 if client_message:
                     client_message.out_of_order = True
@@ -58,59 +68,78 @@ class ProtocolDetective(object):
                     self.processed_messages.append(server_message)
         return self.processed_messages
 
-    def _analyze_protocol_part(self, protocol_table):
-        int = 0
-        for protocol_step in protocol_table:
-            if _is_client_step(protocol_step):
-                self._analyze_atomic_step(protocol_step, self.client_messages)
-            elif _is_server_step(protocol_step):
-                self._analyze_atomic_step(protocol_step, self.server_messages)
-            elif _is_alternative_step_spec(protocol_step):
-                protocol_alternatives = protocol_step.split(" | ")
+    def _analyze_protocol_part(self, step):
+        protocol_table = get_protocol_part(step)
+        for current_step in protocol_table:
+            if _is_alternative_step_spec(current_step):
+                protocol_alternatives = current_step.split(" | ")
                 for protocol_alternative in protocol_alternatives:
-                    if _is_optional_step_spec(protocol_alternative):
-                        self._analyze_optional_step([protocol_alternative])
+                    if _is_client_step(protocol_alternative):
+                        self._analyze_atomic_step(protocol_alternative, self.client_messages)
+                    elif _is_server_step(protocol_alternative):
+                        self._analyze_atomic_step(protocol_alternative, self.server_messages)
                     elif _is_repeatable_step_spec(protocol_alternative):
-                        self._analyze_repeatable_step([protocol_alternative])
-                    else:
-                        protocol_part = getattr(sys.modules[__name__], _get_array_name(protocol_alternative))
+                        self._analyze_repeatable_step(protocol_alternative)
+                    elif _is_optional_step_spec(protocol_alternative):
+                        self._analyze_optional_step(protocol_alternative)
+                    else:  # non-atomic mandatory alternative
                         try:
-                            self._analyze_protocol_part(protocol_part)
+                            self._analyze_protocol_part(protocol_alternative)
                             break
                         except ProtocolMismatch:
                             pass  # the alternative did not match try the next one
                 else:  # none of the alternatives matched
-                    raise ProtocolMismatch
-            elif _is_optional_step_spec(protocol_step):
-                protocol_part = getattr(sys.modules[__name__], _get_array_name(protocol_step[1:]))
-                self._analyze_optional_step(protocol_part)
-            elif _is_repeatable_step_spec(protocol_step):
-                protocol_part = getattr(sys.modules[__name__], _get_array_name(protocol_step[1:]))
-                self._analyze_repeatable_step(protocol_part)
-            else:  # mandatory step spec, e.g. open-connection
-                protocol_part = getattr(sys.modules[__name__], _get_array_name(protocol_step))
-                self._analyze_protocol_part(protocol_part)
+                    raise ProtocolMismatch("None of the protocol alternatives matched:\n"
+                                           "alternatives:%s\n"
+                                           "current message: %s" % (protocol_alternatives, current_step))
+            elif _is_optional_step_spec(current_step):
+                self._analyze_optional_step(current_step[1:])
+            elif _is_repeatable_step_spec(current_step):
+                self._analyze_repeatable_step(current_step[1:])
+            elif _is_mandatory_step(current_step):
+                self._analyze_protocol_part(current_step)
+            elif _is_client_step(current_step):
+                self._analyze_atomic_step(current_step, self.client_messages)
+            elif _is_server_step(current_step):
+                self._analyze_atomic_step(current_step, self.server_messages)
+            else:
+                raise ProtocolMismatch("Invalid protocol step spec: %s" % current_step)
 
-    def _analyze_optional_step(self, protocol_part):
+    def _analyze_optional_step(self, current_step):
         try:
-            self._analyze_protocol_part(protocol_part)
+            if _is_client_step(current_step):
+                self._analyze_atomic_step(current_step, self.client_messages)
+            elif _is_server_step(current_step):
+                self._analyze_atomic_step(current_step, self.server_messages)
+            else:
+                self._analyze_protocol_part(current_step)
         except ProtocolMismatch:
             pass  # protocol part can match 0 or 1 time
 
-    def _analyze_repeatable_step(self, protocol_part):
+    def _analyze_repeatable_step(self, current_step):
         try:
             while True:
-                self._analyze_protocol_part(protocol_part)
+                if _is_client_step(current_step):
+                    self._analyze_atomic_step(current_step, self.client_messages)
+                elif _is_server_step(current_step):
+                    self._analyze_atomic_step(current_step, self.server_messages)
+                else:
+                    self._analyze_protocol_part(current_step)
         except ProtocolMismatch:
             pass  # protocol part can match 0 or more times
 
-    def _analyze_atomic_step(self, protocol_step, messages):
+    def _analyze_atomic_step(self, current_step, messages):
         try:
             message = messages.pop(0)
-            if message_matches_step(protocol_step, message):
+            while message.type == FRAME_HEARTBEAT:
+                self.processed_messages.append(message)
+                message = messages.pop(0)
+            if message_matches_step(current_step, message):
                 self.processed_messages.append(message)
             else:
                 messages.insert(0, message)
-                raise ProtocolMismatch
+                raise ProtocolMismatch("Atomic step did not match:\n"
+                                       "actual: %s\n"
+                                       "expected: %s" % (message, current_step))
         except IndexError:
-            raise ProtocolMismatch()
+            raise ProtocolMismatch("Message stream empty but protocol is ongoing at: %s" % current_step)

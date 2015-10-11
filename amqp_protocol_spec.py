@@ -26,7 +26,7 @@ USE_CONNECTION = [
 
 CHANNEL = [
     "open-channel",
-     "?use-channel",
+     "*use-channel",
     "close-channel"
 ]
 
@@ -37,7 +37,7 @@ OPEN_CHANNEL = [
 ]
 
 USE_CHANNEL = [
-    "use-channel-client-init | use-channel-server-init | *functional-class"
+    "use-channel-client-init | use-channel-server-init | functional-class"
 ]
 
 USE_CHANNEL_CLIENT_INIT = [
@@ -52,7 +52,7 @@ USE_CHANNEL_SERVER_INIT = [
 
 
 FUNCTIONAL_CLASS = [
-    "*exchange | *queue | *basic | *tx | *confirm"  # TODO: generalize to * and then fix ?use-connection
+    "exchange | queue | basic | tx | confirm"
 ]
 
 
@@ -123,7 +123,11 @@ CANCEL = [
 
 PUBLISH = [
     "C:basic.publish",
-    "C:BODY"
+    "?S:basic.ack",
+    "C:HEADER",
+    "?S:basic.ack",
+    "C:BODY",
+    "?S:basic.ack"
 ]
 
 RETURN_FAILED = [
@@ -154,7 +158,7 @@ GET_EMPTY = [
 ]
 
 ACK = [
-    "C:basic.ack"
+    "C:basic.ack | S:basic.ack"
 ]
 
 REJECT = [
@@ -216,10 +220,10 @@ CLOSE_CONNECTION = [
 
 CLIENT_CLOSE = [
     "C:connection.close",
-    "S:connection.close"
+    "S:connection.close-ok"
 ]
 
 SERVER_CLOSE = [
     "S:connection.close",
-    "C:connection.close"
+    "C:connection.close-ok"
 ]

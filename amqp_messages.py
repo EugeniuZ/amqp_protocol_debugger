@@ -64,7 +64,7 @@ class AMQPFrame(object):
         if self.type == FRAME_METHOD:
             return AMQP_METHODS[self.class_id][self.method_id]
         elif self.type == FRAME_HEADER:
-            return "%s.HEADER" % self.class_id
+            return "HEADER"
         elif self.type == FRAME_BODY:
             return "BODY"
 
@@ -101,7 +101,9 @@ class AMQPProtocolHeader(object):
         self.proto_id = proto_id
         self.major = proto_version_major
         self.minor = proto_version_minor
+        self.type = 0
         self.rev = proto_version_revision
+        self._out_of_order = False
 
     @property
     def source(self):
@@ -110,6 +112,14 @@ class AMQPProtocolHeader(object):
     @property
     def method(self):
         return "protocol-header"
+
+    @property
+    def out_of_order(self):
+        return self._out_of_order
+
+    @out_of_order.setter
+    def out_of_order(self, value):
+        self._out_of_order = value
 
     def __eq__(self, other):
         try:

@@ -6,6 +6,9 @@ KNOWN_FRAME_TYPES = [FRAME_METHOD, FRAME_HEADER, FRAME_BODY, FRAME_HEARTBEAT]
 
 FRAME_END_MARKER = ord(b'\xCE')
 
+CLIENT = "CLIENT"
+SERVER = "SERVER"
+
 
 class MalformedMessage(Exception):
     pass
